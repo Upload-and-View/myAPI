@@ -4,30 +4,47 @@ import requests
 app = Flask(__name__)
 
 # --- GLOBAL STORAGE ---
-# This variable will store the last successfully forwarded binary string.
-# NOTE: In a production environment, this variable will reset if the server restarts.
+# This variable stores the last successfully forwarded binary string.
+# It resets to 00000000 when the server is restarted (e.g., via Deploy Hook).
 LAST_SENT_BINARY = "00000000" 
 
-# --- Helper Function (Remains the same) ---
+# --- Helper Function: Character-to-Binary Encoding ---
 def generate_8bit_binary(message):
-    integer_value = len(message) % 256
+    """Encodes the first character of the message into an 8-bit binary string (ASCII)."""
+    if not message:
+        return "00000000"
+
+    # Get the first character
+    first_char = message[0] 
+    
+    # Get the ASCII/Unicode decimal value (e.g., 'A' is 65)
+    integer_value = ord(first_char) 
+    
+    # Convert decimal value to binary string, removing the '0b' prefix
     binary_string = bin(integer_value)[2:]
+    
+    # Pad with zeros to ensure it is exactly 8 bits long
     return binary_string.zfill(8)
 
-# --- NEW: Root Endpoint (GET /) ---
-# When you visit the main URL in your browser, it will now return the stored value.
+# --- Endpoint 1: Retrieve Last Binary Value (GET /) ---
 @app.route('/', methods=['GET'])
 def get_last_binary():
+    """Returns the last stored 8-bit binary value."""
     # Retrieve the last stored value from the global variable
     return jsonify({
         "value": LAST_SENT_BINARY
     }), 200
 
-# --- Existing: Forwarding Endpoint (POST /forward_message) ---
+# --- Endpoint 2: Forward Message (POST /forward_message) ---
 @app.route('/forward_message', methods=['POST'])
 def forward_message():
-    global LAST_SENT_BINARY  # <--- Declare use of global variable
+    """
+    Accepts a message, encodes the first char to binary, and forwards 
+    the binary value to the destination_link.
+    """
+    global LAST_SENT_BINARY  # Must declare to modify the global variable
 
+    # 1. Input Validation and Parsing
     try:
         data = request.get_json()
         
@@ -40,18 +57,22 @@ def forward_message():
     user_message = data['message']
     destination_url = data['destination_link'] 
 
+    # 2. Process Data
     binary_value = generate_8bit_binary(user_message)
 
     payload_to_send = {
         "value": binary_value
     }
 
-    # 3. FORWARD
+    # 3. FORWARD to Destination
     try:
+        # Use a reasonable timeout for the external request
         forward_response = requests.post(destination_url, json=payload_to_send, timeout=10)
 
+        # Check for success status codes (2xx)
         if 200 <= forward_response.status_code < 300:
-            # *** CRITICAL ADDITION: STORE THE NEW VALUE ***
+            
+            # *** UPDATE GLOBAL STATE ON SUCCESS ***
             LAST_SENT_BINARY = binary_value 
             
             return jsonify({
@@ -68,8 +89,14 @@ def forward_message():
             }), 502
             
     except requests.exceptions.RequestException as e:
+        # Handle network issues (e.g., DNS failure, connection timeout)
         return jsonify({
             "status": "network_error",
             "message": f"Failed to connect to the provided destination URL: {destination_url}",
             "error_details": str(e)
         }), 504
+
+if __name__ == '__main__':
+    # In a Render environment, Gunicorn handles the running, 
+    # but this is for local testing convenience.
+    app.run(debug=True)
