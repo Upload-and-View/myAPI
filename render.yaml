@@ -1,0 +1,36 @@
+# render.yaml
+
+# 1. Defines the Blueprint version
+version: "1" 
+
+# 2. Defines all the services Render should create
+services:
+  # --- Service 1: Your Flask API ---
+  - type: web # This means it's a publicly accessible web service
+    name: binary-gateway-api
+    env: python # The runtime environment
+    # Specifies the relative path to the code (if not in the root)
+    # The "." means the code is in the current directory (root)
+    rootDir: ./
+    
+    # The build command (installs dependencies)
+    buildCommand: pip install -r requirements.txt
+    
+    # The start command (runs the app using Gunicorn)
+    startCommand: gunicorn app:app
+    
+    # The free instance type
+    plan: free 
+    
+    # The public-facing port
+    port: 10000 
+    
+    # Environment variables (key-value pairs)
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.7
+
+  # --- Optional Service 2: A PostgreSQL Database ---
+  - type: pserv # Short for PostgreSQL service
+    name: api-database
+    plan: free
